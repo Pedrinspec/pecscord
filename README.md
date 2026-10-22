@@ -37,20 +37,28 @@ horizonte, rosa e ciano). É só estética; a escolha fica salva no navegador.
 
 ## Opções de áudio
 
-Na barra de controles, duas caixas são lembradas entre sessões:
+- **Supressão de ruído** (caixa na barra de controles, ligada por padrão e
+  lembrada entre sessões): filtro de ruído do próprio navegador. Desligue se ele
+  estiver "comendo" música ou vozes baixas. A troca reabre o microfone, então a
+  voz some por uma fração de segundo.
 
-- **Supressão de ruído** (ligada por padrão): filtro de ruído do próprio
-  navegador. Desligue se ele estiver "comendo" música ou vozes baixas. A troca
-  reabre o microfone, então a voz some por uma fração de segundo.
-- **Mutar meu mic ao compartilhar tela**: enquanto a tela estiver compartilhada,
-  sua voz não vai para a transmissão; só o áudio do sistema continua. Serve para
-  quem conversa em outro app de voz durante a transmissão. O microfone volta
-  sozinho quando a tela para. Um clique direto em Mutar/Desmutar tem prioridade.
+### Eco ao compartilhar a tela com áudio do sistema
 
-O áudio do sistema capturado com a tela inclui tudo que toca no computador, o
-que abrange outros apps de voz. Para não transmitir as vozes de outro app, o
-jeito mais simples é compartilhar só a janela ou aba do jogo, em vez da tela
-inteira, ou mandar o outro app para um dispositivo de saída diferente.
+O áudio do sistema inclui tudo que toca no computador, inclusive as vozes dos
+outros participantes do Pecscord. Sem tratamento, quem assiste ouviria a própria
+voz de volta. O cliente pede ao navegador a opção `restrictOwnAudio`, que
+remove da captura o que a aba do Pecscord toca; funciona com a tela inteira no
+Chrome e Edge recentes (134+). Se o navegador não aplicar, aparece um aviso no
+chat de quem compartilha.
+
+O navegador não consegue excluir outros programas da captura. Se você conversa
+no Discord (ou outro app de voz) ao mesmo tempo, as vozes de lá vão para a
+transmissão e quem está nos dois lugares se ouve. Para evitar isso, mande a
+saída do Discord para um dispositivo de áudio diferente do padrão do Windows
+(Discord: Configurações → Voz e vídeo → Dispositivo de saída; ou Windows:
+Configurações → Sistema → Som → Mixer de volume, escolhendo o dispositivo de
+saída do Discord). A captura só pega o dispositivo padrão. Ou use só a voz do
+Pecscord durante a transmissão.
 
 ## Testes
 

@@ -195,20 +195,17 @@ try {
   check((await a.evaluate(() => window.__pecscordDebug.micSettings()?.noiseSuppression)) === true, "religar a opção devolve a supressão");
   check((await a.evaluate(() => localStorage.getItem("pecscord-noise"))) === "on", "preferência de supressão é lembrada");
 
-  console.log("\n# tela: Ana compartilha em 1080p60 com mic mutado ao compartilhar");
-  await a.check("#mute-on-share");
+  console.log("\n# tela: Ana compartilha em 1080p60");
   await a.selectOption("#screen-quality", "1080p60");
   await a.click("#screen");
   await sleep(6000);
   seen = await remoteTiles(b, "screen");
   check(seen.length === 1 && !seen[0].hidden && seen[0].width > 0, "Bruno vê a tela de Ana");
   check((await a.textContent("#screen")).includes("Parar"), "botão de Ana indica compartilhamento ativo");
-  check((await a.evaluate(() => window.__pecscordDebug.micEnabled())) === false, "microfone de Ana fica mudo ao compartilhar");
-  check((await a.textContent("#mute")).includes("Desmutar"), "botão Mutar reflete o mudo automático");
-  await a.uncheck("#mute-on-share");
-  check((await a.evaluate(() => window.__pecscordDebug.micEnabled())) === true, "desmarcar a opção durante a transmissão devolve o microfone");
-  await a.check("#mute-on-share");
-  check((await a.evaluate(() => window.__pecscordDebug.micEnabled())) === false, "marcar de novo silencia outra vez");
+  check((await a.evaluate(() => window.__pecscordDebug.micEnabled())) === true, "microfone de Ana continua ativo ao compartilhar");
+  const screenAudio = await a.evaluate(() => window.__pecscordDebug.screenAudioSettings());
+  check(screenAudio !== null && screenAudio.restrictOwnAudio === true, "áudio do sistema exclui o que a aba do Pecscord toca (restrictOwnAudio)");
+  check(await a.$$eval("#messages li.error", (els) => els.length === 0), "nenhum aviso de eco no chat de Ana");
   const stageVisible = await b.$eval("#stage", (e) => !e.hidden);
   check(stageVisible, "palco de tela visível para Bruno");
   await b.click('.tile[data-peer="1"][data-kind="screen"] .vol');
@@ -243,9 +240,6 @@ try {
   seen = await remoteTiles(b, "screen");
   check(seen.length === 1 && seen[0].hidden, "tile de tela de Ana some para Bruno");
   check(await b.$eval("#stage", (e) => e.hidden), "palco de tela escondido para Bruno");
-  check((await a.evaluate(() => window.__pecscordDebug.micEnabled())) === true, "microfone de Ana volta quando a tela para");
-  check((await a.textContent("#mute")).includes("Mutar") && !(await a.textContent("#mute")).includes("Desmutar"), "botão volta para Mutar");
-  await a.uncheck("#mute-on-share");
   check(await b.$eval("#videos", (e) => !e.classList.contains("focus")), "maximização sai sozinha quando a tela para");
 
   console.log("\n# terceira pessoa entra com câmeras já ligadas");

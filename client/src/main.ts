@@ -81,7 +81,6 @@ const chatForm = $<HTMLFormElement>("chat-form");
 const textInput = $<HTMLInputElement>("text");
 const muteButton = $<HTMLButtonElement>("mute");
 const noiseCheckbox = $<HTMLInputElement>("noise-suppression");
-const muteOnShareCheckbox = $<HTMLInputElement>("mute-on-share");
 const cameraButton = $<HTMLButtonElement>("camera");
 const screenButton = $<HTMLButtonElement>("screen");
 const screenQuality = $<HTMLSelectElement>("screen-quality");
@@ -96,9 +95,6 @@ let ws: WebSocket | null = null;
 let myId = -1;
 let myName = "";
 let localStream: MediaStream | null = null;
-// Verdadeiro enquanto o microfone estiver mudo por causa do compartilhamento de tela
-// (opção "mutar ao compartilhar"), e não por escolha direta no botão.
-let micSilencedByShare = false;
 const localTracks: Partial<Record<SenderKey, MediaStreamTrack>> = {};
 const names = new Map<number, string>();
 const peers = new Map<number, Peer>();
@@ -570,14 +566,29 @@ async function acquireScreen(): Promise<MediaStreamTrack[]> {
       height: { ideal: preset.height },
       frameRate: { ideal: preset.frameRate, max: preset.frameRate },
     },
-    // Áudio do sistema sem processamento de voz, para música e jogos soarem como são.
-    audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+    audio: {
+      // Sem processamento de voz, para música e jogos soarem como são.
+      echoCancellation: false,
+      noiseSuppression: false,
+      autoGainControl: false,
+      // Tira da captura do sistema o que esta aba toca (as vozes dos outros participantes).
+      // Sem isso, quem assiste ouve a própria voz de volta pela tela. Chromium 134+.
+      restrictOwnAudio: true,
+    } as MediaTrackConstraints,
     systemAudio: "include", // Chromium: oferece a opção de incluir o áudio do sistema
     selfBrowserSurface: "exclude", // não lista a própria aba do Pecscord
   };
   const stream = await navigator.mediaDevices.getDisplayMedia(options);
   const video = stream.getVideoTracks()[0];
   video.contentHint = "motion"; // prioriza fluidez sobre nitidez em conteúdo que se move
+
+  const audio = stream.getAudioTracks()[0];
+  if (audio && (audio.getSettings() as Record<string, unknown>).restrictOwnAudio !== true) {
+    addLine(
+      "Seu navegador não separa o áudio do Pecscord da captura do sistema: quem assiste pode ouvir a própria voz pela sua tela.",
+      "error",
+    );
+  }
   return [video, ...stream.getAudioTracks()];
 }
 
@@ -600,7 +611,6 @@ async function startLocal(kind: Kind): Promise<void> {
     if (kind === "screen" && audio) await setOutgoing(peer, "screenAudio", audio);
   }
   announceMedia(kind, true);
-  if (kind === "screen") applyMuteOnShare();
   updateButtons();
 }
 
@@ -620,11 +630,10 @@ async function stopLocal(kind: Kind): Promise<void> {
   for (const peer of peers.values()) {
     for (const key of keys) await peer.senders[key]?.replaceTrack(null);
   }
-  if (kind === "screen") applyMuteOnShare();
   updateButtons();
 }
 
-// ---- microfone: mudo, mutar ao compartilhar e supressão de ruído ----------------
+// ---- microfone: mudo e supressão de ruído ----------------------------------------
 
 function micTrack(): MediaStreamTrack | null {
   return localStream?.getAudioTracks()[0] ?? null;
@@ -636,24 +645,6 @@ function setMicEnabled(enabled: boolean): void {
   track.enabled = enabled;
   muteButton.textContent = enabled ? "Mutar" : "Desmutar";
   muteButton.classList.toggle("active", !enabled);
-}
-
-// Com a opção ligada, a voz some da transmissão enquanto a tela estiver compartilhada
-// e volta sozinha quando ela parar. Um clique direto em Mutar/Desmutar tem prioridade.
-function applyMuteOnShare(): void {
-  const track = micTrack();
-  if (!track) return;
-  const sharing = !!localTracks.screen;
-
-  if (sharing && muteOnShareCheckbox.checked && track.enabled) {
-    setMicEnabled(false);
-    micSilencedByShare = true;
-    addLine("Microfone silenciado enquanto a tela é compartilhada.", "system");
-  } else if (micSilencedByShare && (!sharing || !muteOnShareCheckbox.checked)) {
-    setMicEnabled(true);
-    micSilencedByShare = false;
-    addLine("Microfone de volta.", "system");
-  }
 }
 
 // Processamento de voz do próprio navegador. Eco e ganho automático ficam sempre
@@ -685,7 +676,6 @@ async function applyNoiseSuppression(): Promise<void> {
 function loadAudioOptions(): void {
   try {
     noiseCheckbox.checked = localStorage.getItem("pecscord-noise") !== "off";
-    muteOnShareCheckbox.checked = localStorage.getItem("pecscord-mute-on-share") === "on";
   } catch {
     // sem localStorage (modo privado etc.): fica nos padrões do HTML
   }
@@ -694,7 +684,6 @@ function loadAudioOptions(): void {
 function saveAudioOptions(): void {
   try {
     localStorage.setItem("pecscord-noise", noiseCheckbox.checked ? "on" : "off");
-    localStorage.setItem("pecscord-mute-on-share", muteOnShareCheckbox.checked ? "on" : "off");
   } catch {
     // ignorado
   }
@@ -834,7 +823,6 @@ function cleanup(): void {
   }
   localStream?.getTracks().forEach((t) => t.stop());
   localStream = null;
-  micSilencedByShare = false;
   names.clear();
   ws = null;
   myId = -1;
@@ -895,17 +883,12 @@ joinForm.addEventListener("submit", async (event) => {
 muteButton.addEventListener("click", () => {
   const track = micTrack();
   if (!track) return;
-  micSilencedByShare = false; // escolha direta vale mais que a automática
   setMicEnabled(!track.enabled);
 });
 
 noiseCheckbox.addEventListener("change", () => {
   saveAudioOptions();
   applyNoiseSuppression().catch((err) => addLine(`Não foi possível mudar a supressão de ruído: ${err}`, "error"));
-});
-muteOnShareCheckbox.addEventListener("change", () => {
-  saveAudioOptions();
-  applyMuteOnShare();
 });
 loadAudioOptions();
 
@@ -967,6 +950,7 @@ declare global {
   interface Window {
     __pecscordDebug?: {
       screenSettings: () => MediaTrackSettings | null;
+      screenAudioSettings: () => MediaTrackSettings | null;
       micSettings: () => MediaTrackSettings | null;
       micEnabled: () => boolean | null;
       gainOf: (peerId: number, channel: AudioChannel) => number;
@@ -975,6 +959,7 @@ declare global {
 }
 window.__pecscordDebug = {
   screenSettings: () => localTracks.screen?.getSettings() ?? null,
+  screenAudioSettings: () => localTracks.screenAudio?.getSettings() ?? null,
   micSettings: () => micTrack()?.getSettings() ?? null,
   micEnabled: () => micTrack()?.enabled ?? null,
   gainOf: (peerId, channel) => effectiveGain(peerId, channel),
