@@ -16,7 +16,8 @@ type SignalData =
 
 // Tipos de vídeo que aparecem como tile. O áudio do sistema viaja junto com a tela.
 type Kind = "camera" | "screen";
-type SenderKey = Kind | "screenAudio";
+// "mic" é a voz; fica fora de localTracks porque é negociada na criação da conexão.
+type SenderKey = Kind | "screenAudio" | "mic";
 
 // Negociação "perfect negotiation": quando as duas pontas oferecem ao mesmo tempo,
 // uma delas (a "polite") cede e a outra segue com a sua oferta.
@@ -79,6 +80,8 @@ const messages = $<HTMLUListElement>("messages");
 const chatForm = $<HTMLFormElement>("chat-form");
 const textInput = $<HTMLInputElement>("text");
 const muteButton = $<HTMLButtonElement>("mute");
+const noiseCheckbox = $<HTMLInputElement>("noise-suppression");
+const muteOnShareCheckbox = $<HTMLInputElement>("mute-on-share");
 const cameraButton = $<HTMLButtonElement>("camera");
 const screenButton = $<HTMLButtonElement>("screen");
 const screenQuality = $<HTMLSelectElement>("screen-quality");
@@ -93,6 +96,9 @@ let ws: WebSocket | null = null;
 let myId = -1;
 let myName = "";
 let localStream: MediaStream | null = null;
+// Verdadeiro enquanto o microfone estiver mudo por causa do compartilhamento de tela
+// (opção "mutar ao compartilhar"), e não por escolha direta no botão.
+let micSilencedByShare = false;
 const localTracks: Partial<Record<SenderKey, MediaStreamTrack>> = {};
 const names = new Map<number, string>();
 const peers = new Map<number, Peer>();
@@ -434,7 +440,7 @@ function createPeer(peerId: number, initiator: boolean): Peer {
   });
 
   if (localStream) {
-    for (const track of localStream.getAudioTracks()) pc.addTrack(track, localStream);
+    for (const track of localStream.getAudioTracks()) peer.senders.mic = pc.addTrack(track, localStream);
   } else {
     // Sem microfone, a pessoa ainda ouve os outros.
     pc.addTransceiver("audio", { direction: "recvonly" });
@@ -509,7 +515,7 @@ function addRemoteVideo(peerId: number, kind: Kind, track: MediaStreamTrack): vo
 }
 
 async function configureSender(sender: RTCRtpSender, key: SenderKey): Promise<void> {
-  if (key === "screenAudio") return;
+  if (key === "screenAudio" || key === "mic") return;
 
   const params = sender.getParameters();
   const encoding = params.encodings[0];
@@ -594,6 +600,7 @@ async function startLocal(kind: Kind): Promise<void> {
     if (kind === "screen" && audio) await setOutgoing(peer, "screenAudio", audio);
   }
   announceMedia(kind, true);
+  if (kind === "screen") applyMuteOnShare();
   updateButtons();
 }
 
@@ -613,7 +620,84 @@ async function stopLocal(kind: Kind): Promise<void> {
   for (const peer of peers.values()) {
     for (const key of keys) await peer.senders[key]?.replaceTrack(null);
   }
+  if (kind === "screen") applyMuteOnShare();
   updateButtons();
+}
+
+// ---- microfone: mudo, mutar ao compartilhar e supressão de ruído ----------------
+
+function micTrack(): MediaStreamTrack | null {
+  return localStream?.getAudioTracks()[0] ?? null;
+}
+
+function setMicEnabled(enabled: boolean): void {
+  const track = micTrack();
+  if (!track) return;
+  track.enabled = enabled;
+  muteButton.textContent = enabled ? "Mutar" : "Desmutar";
+  muteButton.classList.toggle("active", !enabled);
+}
+
+// Com a opção ligada, a voz some da transmissão enquanto a tela estiver compartilhada
+// e volta sozinha quando ela parar. Um clique direto em Mutar/Desmutar tem prioridade.
+function applyMuteOnShare(): void {
+  const track = micTrack();
+  if (!track) return;
+  const sharing = !!localTracks.screen;
+
+  if (sharing && muteOnShareCheckbox.checked && track.enabled) {
+    setMicEnabled(false);
+    micSilencedByShare = true;
+    addLine("Microfone silenciado enquanto a tela é compartilhada.", "system");
+  } else if (micSilencedByShare && (!sharing || !muteOnShareCheckbox.checked)) {
+    setMicEnabled(true);
+    micSilencedByShare = false;
+    addLine("Microfone de volta.", "system");
+  }
+}
+
+// Processamento de voz do próprio navegador. Eco e ganho automático ficam sempre
+// ligados; a supressão de ruído é opcional porque pode "comer" música ou vozes baixas.
+function micConstraints(): MediaTrackConstraints {
+  return { echoCancellation: true, autoGainControl: true, noiseSuppression: noiseCheckbox.checked };
+}
+
+// Pega o microfone de novo com a nova configuração e troca a faixa em todas as
+// conexões, sem renegociar. No Chromium, applyConstraints não mexe no processamento
+// de voz e uma nova captura reaproveita a que já está aberta; por isso a faixa antiga
+// é fechada antes do pedido. A voz some por uma fração de segundo.
+async function applyNoiseSuppression(): Promise<void> {
+  const track = micTrack();
+  if (!track) return;
+  const wanted = noiseCheckbox.checked;
+  if (track.getSettings().noiseSuppression === wanted) return;
+
+  const wasEnabled = track.enabled;
+  track.stop();
+  const fresh = await navigator.mediaDevices.getUserMedia({ audio: micConstraints(), video: false });
+  const next = fresh.getAudioTracks()[0];
+  next.enabled = wasEnabled;
+  localStream = fresh;
+  for (const peer of peers.values()) await peer.senders.mic?.replaceTrack(next);
+  addLine(wanted ? "Supressão de ruído ligada." : "Supressão de ruído desligada.", "system");
+}
+
+function loadAudioOptions(): void {
+  try {
+    noiseCheckbox.checked = localStorage.getItem("pecscord-noise") !== "off";
+    muteOnShareCheckbox.checked = localStorage.getItem("pecscord-mute-on-share") === "on";
+  } catch {
+    // sem localStorage (modo privado etc.): fica nos padrões do HTML
+  }
+}
+
+function saveAudioOptions(): void {
+  try {
+    localStorage.setItem("pecscord-noise", noiseCheckbox.checked ? "on" : "off");
+    localStorage.setItem("pecscord-mute-on-share", muteOnShareCheckbox.checked ? "on" : "off");
+  } catch {
+    // ignorado
+  }
 }
 
 async function toggleLocal(kind: Kind): Promise<void> {
@@ -750,6 +834,7 @@ function cleanup(): void {
   }
   localStream?.getTracks().forEach((t) => t.stop());
   localStream = null;
+  micSilencedByShare = false;
   names.clear();
   ws = null;
   myId = -1;
@@ -779,7 +864,7 @@ joinForm.addEventListener("submit", async (event) => {
   ensureAudioCtx(); // criado aqui, dentro do clique, para o navegador permitir reproduzir áudio
 
   try {
-    localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+    localStream = await navigator.mediaDevices.getUserMedia({ audio: micConstraints(), video: false });
   } catch {
     localStream = null;
   }
@@ -808,12 +893,21 @@ joinForm.addEventListener("submit", async (event) => {
 });
 
 muteButton.addEventListener("click", () => {
-  const track = localStream?.getAudioTracks()[0];
+  const track = micTrack();
   if (!track) return;
-  track.enabled = !track.enabled;
-  muteButton.textContent = track.enabled ? "Mutar" : "Desmutar";
-  muteButton.classList.toggle("active", !track.enabled);
+  micSilencedByShare = false; // escolha direta vale mais que a automática
+  setMicEnabled(!track.enabled);
 });
+
+noiseCheckbox.addEventListener("change", () => {
+  saveAudioOptions();
+  applyNoiseSuppression().catch((err) => addLine(`Não foi possível mudar a supressão de ruído: ${err}`, "error"));
+});
+muteOnShareCheckbox.addEventListener("change", () => {
+  saveAudioOptions();
+  applyMuteOnShare();
+});
+loadAudioOptions();
 
 cameraButton.addEventListener("click", () => void toggleLocal("camera"));
 screenButton.addEventListener("click", () => void toggleLocal("screen"));
@@ -846,11 +940,15 @@ declare global {
   interface Window {
     __pecscordDebug?: {
       screenSettings: () => MediaTrackSettings | null;
+      micSettings: () => MediaTrackSettings | null;
+      micEnabled: () => boolean | null;
       gainOf: (peerId: number, channel: AudioChannel) => number;
     };
   }
 }
 window.__pecscordDebug = {
   screenSettings: () => localTracks.screen?.getSettings() ?? null,
+  micSettings: () => micTrack()?.getSettings() ?? null,
+  micEnabled: () => micTrack()?.enabled ?? null,
   gainOf: (peerId, channel) => effectiveGain(peerId, channel),
 };

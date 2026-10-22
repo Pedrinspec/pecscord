@@ -218,6 +218,8 @@
       }
       #controls .group { display: flex; gap: 6px; align-items: center; }
       #controls label { font-size: 13px; color: var(--muted); }
+      #controls .option { display: flex; gap: 4px; align-items: center; cursor: pointer; }
+      #controls .option input { accent-color: var(--accent); margin: 0; }
 
       /* lateral: pessoas + chat */
       #side {
@@ -364,6 +366,16 @@
                 <option value="stage">Palco</option>
                 <option value="grid">Grade</option>
               </select>
+            </div>
+            <div class="group">
+              <label class="option" title="Filtro de ruído do próprio navegador (ventilador, teclado, chiado)">
+                <input type="checkbox" id="noise-suppression" checked />
+                Supressão de ruído
+              </label>
+              <label class="option" title="Sua voz some da transmissão enquanto a tela estiver compartilhada; o áudio do sistema continua">
+                <input type="checkbox" id="mute-on-share" />
+                Mutar meu mic ao compartilhar tela
+              </label>
             </div>
           </div>
         </section>

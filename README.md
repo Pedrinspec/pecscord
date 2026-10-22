@@ -29,6 +29,23 @@ em `client` (porta 5173) com o servidor ativo; o Vite encaminha `/ws` para ele.
 
 A porta do servidor pode ser trocada pela variável `PORT`.
 
+## Opções de áudio
+
+Na barra de controles, duas caixas são lembradas entre sessões:
+
+- **Supressão de ruído** (ligada por padrão): filtro de ruído do próprio
+  navegador. Desligue se ele estiver "comendo" música ou vozes baixas. A troca
+  reabre o microfone, então a voz some por uma fração de segundo.
+- **Mutar meu mic ao compartilhar tela**: enquanto a tela estiver compartilhada,
+  sua voz não vai para a transmissão; só o áudio do sistema continua. Serve para
+  quem conversa em outro app de voz durante a transmissão. O microfone volta
+  sozinho quando a tela para. Um clique direto em Mutar/Desmutar tem prioridade.
+
+O áudio do sistema capturado com a tela inclui tudo que toca no computador, o
+que abrange outros apps de voz. Para não transmitir as vozes de outro app, o
+jeito mais simples é compartilhar só a janela ou aba do jogo, em vez da tela
+inteira, ou mandar o outro app para um dispositivo de saída diferente.
+
 ## Testes
 
 ```
