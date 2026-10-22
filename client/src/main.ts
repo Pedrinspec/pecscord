@@ -80,6 +80,8 @@ const cameraButton = $<HTMLButtonElement>("camera");
 const screenButton = $<HTMLButtonElement>("screen");
 const screenQuality = $<HTMLSelectElement>("screen-quality");
 const leaveButton = $<HTMLButtonElement>("leave");
+const layoutSelect = $<HTMLSelectElement>("layout");
+const videos = $<HTMLDivElement>("videos");
 const stage = $<HTMLDivElement>("stage");
 const strip = $<HTMLDivElement>("strip");
 const audioContainer = $<HTMLDivElement>("audio");
@@ -124,10 +126,29 @@ function renderParticipants(): void {
   }
 }
 
+// Tile maximizado: ocupa toda a área de mídia até ser restaurado, esconder ou sair.
+let focusedTile: HTMLElement | null = null;
+
+function setFocus(tile: HTMLElement | null): void {
+  if (focusedTile) {
+    focusedTile.classList.remove("focused");
+    const btn = focusedTile.querySelector<HTMLButtonElement>(".max");
+    if (btn) btn.textContent = "⤢";
+  }
+  focusedTile = tile;
+  if (tile) {
+    tile.classList.add("focused");
+    const btn = tile.querySelector<HTMLButtonElement>(".max");
+    if (btn) btn.textContent = "⤡";
+  }
+  videos.classList.toggle("focus", tile !== null);
+}
+
 // O palco só aparece quando há alguma tela visível; o resto do tempo as câmeras ocupam tudo.
 function refreshLayout(): void {
   const visibleScreens = [...stage.querySelectorAll<HTMLElement>(".tile")].some((t) => !t.hidden);
   stage.hidden = !visibleScreens;
+  if (focusedTile && (!focusedTile.isConnected || focusedTile.hidden)) setFocus(null);
 }
 
 function createTile(owner: string, kind: Kind, title: string): { tile: HTMLElement; video: HTMLVideoElement } {
@@ -144,11 +165,32 @@ function createTile(owner: string, kind: Kind, title: string): { tile: HTMLEleme
   const caption = document.createElement("span");
   caption.textContent = title;
 
-  tile.append(video, caption);
+  const max = document.createElement("button");
+  max.type = "button";
+  max.className = "max";
+  max.textContent = "⤢";
+  max.title = "Maximizar / restaurar";
+  max.addEventListener("click", (event) => {
+    event.stopPropagation();
+    setFocus(focusedTile === tile ? null : tile);
+  });
+
+  tile.append(video, caption, max);
   tile.addEventListener("dblclick", () => void video.requestFullscreen?.());
   (kind === "screen" ? stage : strip).append(tile);
   refreshLayout();
   return { tile, video };
+}
+
+function applyLayout(value: string): void {
+  const layout = value === "grid" ? "grid" : "stage";
+  layoutSelect.value = layout;
+  videos.dataset.layout = layout;
+  try {
+    localStorage.setItem("pecscord-layout", layout);
+  } catch {
+    // armazenamento indisponível (ex.: janela privada); a preferência vale só nesta sessão
+  }
 }
 
 function setTileHidden(tile: HTMLElement, hidden: boolean): void {
@@ -584,6 +626,16 @@ cameraButton.addEventListener("click", () => void toggleLocal("camera"));
 screenButton.addEventListener("click", () => void toggleLocal("screen"));
 screenQuality.addEventListener("change", () => void applyScreenPreset());
 leaveButton.addEventListener("click", () => ws?.close());
+layoutSelect.addEventListener("change", () => applyLayout(layoutSelect.value));
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && focusedTile) setFocus(null);
+});
+
+try {
+  applyLayout(localStorage.getItem("pecscord-layout") ?? "stage");
+} catch {
+  applyLayout("stage");
+}
 
 chatForm.addEventListener("submit", (event) => {
   event.preventDefault();

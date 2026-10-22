@@ -162,6 +162,21 @@ try {
   const stageVisible = await b.$eval("#stage", (e) => !e.hidden);
   check(stageVisible, "palco de tela visível para Bruno");
 
+  console.log("\n# maximizar e modo grade");
+  await b.click('.tile[data-peer="1"][data-kind="screen"] .max');
+  check(await b.$eval("#videos", (e) => e.classList.contains("focus")), "Bruno maximiza a tela de Ana");
+  let visible = await b.$$eval(".tile", (els) => els.filter((e) => getComputedStyle(e).display !== "none").length);
+  check(visible === 1, `só o tile maximizado fica visível (${visible})`);
+  await b.keyboard.press("Escape");
+  check(await b.$eval("#videos", (e) => !e.classList.contains("focus")), "Esc restaura o layout");
+  visible = await b.$$eval(".tile", (els) => els.filter((e) => getComputedStyle(e).display !== "none").length);
+  check(visible === 3, `todos os tiles voltam (${visible})`);
+  await b.selectOption("#layout", "grid");
+  check(await b.$eval("#videos", (e) => e.dataset.layout === "grid"), "modo grade ativado");
+  check(await b.$eval("#stage", (e) => getComputedStyle(e).display === "contents"), "grade junta palco e faixa");
+  await b.selectOption("#layout", "stage");
+  await b.click('.tile[data-peer="1"][data-kind="screen"] .max'); // fica maximizado até Ana parar
+
   console.log("\n# tela: Ana troca para 720p30 durante a transmissão");
   await a.selectOption("#screen-quality", "720p30");
   await sleep(3000);
@@ -174,6 +189,7 @@ try {
   seen = await remoteTiles(b, "screen");
   check(seen.length === 1 && seen[0].hidden, "tile de tela de Ana some para Bruno");
   check(await b.$eval("#stage", (e) => e.hidden), "palco de tela escondido para Bruno");
+  check(await b.$eval("#videos", (e) => !e.classList.contains("focus")), "maximização sai sozinha quando a tela para");
 
   console.log("\n# terceira pessoa entra com câmeras já ligadas");
   const c = await openPage("Carla", room);
