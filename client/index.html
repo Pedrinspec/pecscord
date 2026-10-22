@@ -222,10 +222,16 @@
       /* lateral: pessoas + chat */
       #side {
         display: grid;
-        grid-template-rows: auto auto 1fr auto;
+        grid-template-rows: auto 1fr;
         min-height: 0;
         background: var(--surface);
         border-left: 1px solid var(--border);
+      }
+      #people { border-bottom: 1px solid var(--border); }
+      #chat {
+        display: grid;
+        grid-template-rows: auto 1fr auto;
+        min-height: 0;
       }
       #side h2 {
         margin: 0;
@@ -242,7 +248,6 @@
         display: flex;
         flex-wrap: wrap;
         gap: 6px;
-        border-bottom: 1px solid var(--border);
       }
       #participants li {
         padding: 3px 10px;
@@ -250,6 +255,41 @@
         background: var(--surface-2);
         font-size: 13px;
       }
+      #participants li[data-peer] { cursor: pointer; }
+      #participants li[data-peer]:hover { background: #263041; }
+      #participants li.selected { outline: 2px solid var(--accent); }
+      #participants li.quiet { color: var(--muted); }
+
+      /* painel de volume de uma pessoa: voz e tela separados */
+      #volume-panel {
+        display: grid;
+        gap: 6px;
+        padding: 0 14px 12px;
+        font-size: 13px;
+      }
+      .volume-head { display: flex; align-items: center; justify-content: space-between; }
+      .volume-head #volume-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .volume-head button { padding: 0 8px; font-size: 16px; line-height: 1.4; background: none; border-color: transparent; color: var(--muted); }
+      .volume-row { display: grid; grid-template-columns: 34px 1fr 44px auto; align-items: center; gap: 8px; }
+      .volume-row > span:first-child { color: var(--muted); }
+      .volume-row input[type="range"] { width: 100%; min-width: 0; padding: 0; background: none; border: 0; accent-color: var(--accent); }
+      .volume-row > span:nth-child(3) { text-align: right; color: var(--muted); }
+      .volume-row button { padding: 3px 8px; font-size: 12px; }
+      .volume-row button.active { background: var(--danger); border-color: var(--danger); color: #fff; }
+
+      .tile .vol {
+        position: absolute;
+        top: 8px;
+        right: 44px;
+        padding: 2px 8px;
+        font-size: 14px;
+        line-height: 1.4;
+        background: rgba(0, 0, 0, 0.65);
+        border-color: transparent;
+        opacity: 0;
+        transition: opacity 0.15s;
+      }
+      .tile:hover .vol, .tile.focused .vol { opacity: 1; }
       #messages {
         list-style: none;
         margin: 0;
@@ -329,14 +369,36 @@
         </section>
 
         <aside id="side">
-          <h2>Pessoas</h2>
-          <ul id="participants"></ul>
-          <h2>Chat</h2>
-          <ul id="messages"></ul>
-          <form id="chat-form">
-            <input id="text" placeholder="Digite uma mensagem" autocomplete="off" />
-            <button type="submit" class="primary">Enviar</button>
-          </form>
+          <section id="people">
+            <h2>Pessoas</h2>
+            <ul id="participants"></ul>
+            <div id="volume-panel" hidden>
+              <div class="volume-head">
+                <span id="volume-name"></span>
+                <button type="button" id="volume-close" title="Fechar">×</button>
+              </div>
+              <div class="volume-row">
+                <span>Voz</span>
+                <input type="range" id="volume-mic" min="0" max="200" step="5" value="100" aria-label="Volume da voz" />
+                <span id="volume-mic-value">100%</span>
+                <button type="button" id="volume-mic-mute">Mutar</button>
+              </div>
+              <div class="volume-row">
+                <span>Tela</span>
+                <input type="range" id="volume-screen" min="0" max="200" step="5" value="100" aria-label="Volume da tela" />
+                <span id="volume-screen-value">100%</span>
+                <button type="button" id="volume-screen-mute">Mutar</button>
+              </div>
+            </div>
+          </section>
+          <section id="chat">
+            <h2>Chat</h2>
+            <ul id="messages"></ul>
+            <form id="chat-form">
+              <input id="text" placeholder="Digite uma mensagem" autocomplete="off" />
+              <button type="submit" class="primary">Enviar</button>
+            </form>
+          </section>
         </aside>
       </div>
     </div>

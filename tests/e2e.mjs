@@ -132,6 +132,25 @@ try {
   const audioCount = await b.$$eval("#audio audio", (els) => els.length);
   check(audioCount >= 1, "Bruno recebe a faixa de áudio de Ana");
 
+  console.log("\n# volume por pessoa: voz e tela separados");
+  await b.click('#participants li[data-peer="1"]');
+  check(await b.$eval("#volume-panel", (e) => !e.hidden), "painel abre ao clicar em Ana");
+  check((await b.textContent("#volume-name")) === "Ana", "painel mostra o nome de Ana");
+  const setRange = (page, sel, v) => page.$eval(sel, (el, v) => { el.value = v; el.dispatchEvent(new Event("input", { bubbles: true })); }, v);
+  await setRange(b, "#volume-mic", "50");
+  check((await b.evaluate(() => window.__pecscordDebug.gainOf(1, "mic"))) === 0.5, "voz de Ana a 50%");
+  check((await b.textContent('#participants li[data-peer="1"]')).includes("50%"), "chip de Ana mostra 50%");
+  await b.click("#volume-mic-mute");
+  check((await b.evaluate(() => window.__pecscordDebug.gainOf(1, "mic"))) === 0, "voz de Ana mutada");
+  await b.click("#volume-mic-mute");
+  check((await b.evaluate(() => window.__pecscordDebug.gainOf(1, "mic"))) === 0.5, "voz de Ana volta a 50%");
+  await setRange(b, "#volume-screen", "150");
+  check((await b.evaluate(() => window.__pecscordDebug.gainOf(1, "screen"))) === 1.5, "tela de Ana a 150%");
+  check((await b.evaluate(() => window.__pecscordDebug.gainOf(1, "mic"))) === 0.5, "voz de Ana não muda com a tela");
+  check((await b.evaluate(() => window.__pecscordDebug.gainOf(2, "mic"))) === 1, "volume de outras pessoas não muda");
+  await b.click("#volume-close");
+  check(await b.$eval("#volume-panel", (e) => e.hidden), "painel fecha");
+
   console.log("\n# câmera: os dois ligam ao mesmo tempo");
   await Promise.all([a.click("#camera"), b.click("#camera")]);
   await sleep(6000);
@@ -161,6 +180,10 @@ try {
   check((await a.textContent("#screen")).includes("Parar"), "botão de Ana indica compartilhamento ativo");
   const stageVisible = await b.$eval("#stage", (e) => !e.hidden);
   check(stageVisible, "palco de tela visível para Bruno");
+  await b.click('.tile[data-peer="1"][data-kind="screen"] .vol');
+  check(await b.$eval("#volume-panel", (e) => !e.hidden && document.getElementById("volume-name").textContent === "Ana"), "botão 🔊 do tile abre o painel de Ana");
+  check((await b.$eval("#volume-screen", (e) => e.value)) === "150", "slider da tela lembra os 150%");
+  await b.click("#volume-close");
 
   console.log("\n# maximizar e modo grade");
   await b.click('.tile[data-peer="1"][data-kind="screen"] .max');

@@ -72,6 +72,9 @@ const roomInput = $<HTMLInputElement>("room");
 const nameInput = $<HTMLInputElement>("name");
 const roomName = $<HTMLElement>("room-name");
 const participants = $<HTMLUListElement>("participants");
+const volumePanel = $<HTMLDivElement>("volume-panel");
+const volumeName = $<HTMLSpanElement>("volume-name");
+const volumeClose = $<HTMLButtonElement>("volume-close");
 const messages = $<HTMLUListElement>("messages");
 const chatForm = $<HTMLFormElement>("chat-form");
 const textInput = $<HTMLInputElement>("text");
@@ -116,15 +119,189 @@ function send(msg: object): void {
   if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg));
 }
 
+// ---- volume por pessoa ------------------------------------------------------
+// O áudio de cada participante passa por um GainNode por canal (voz e tela), o que
+// permite reduzir, mutar ou amplificar (até 200%) só aquela pessoa, e a tela dela
+// separadamente da voz.
+
+type AudioChannel = "mic" | "screen";
+const CHANNELS: AudioChannel[] = ["mic", "screen"];
+const VOLUME_MAX = 2;
+
+let audioCtx: AudioContext | null = null;
+const peerGains = new Map<string, GainNode>();
+const volumes = new Map<string, number>(); // 0..2; ausente = 1
+const mutedAudio = new Set<string>();
+let panelPeer: number | null = null;
+
+const audioKey = (peerId: number, channel: AudioChannel): string => `${peerId}:${channel}`;
+
+const channelControls: Record<AudioChannel, { range: HTMLInputElement; value: HTMLSpanElement; mute: HTMLButtonElement }> = {
+  mic: { range: $("volume-mic"), value: $("volume-mic-value"), mute: $("volume-mic-mute") },
+  screen: { range: $("volume-screen"), value: $("volume-screen-value"), mute: $("volume-screen-mute") },
+};
+
+function ensureAudioCtx(): AudioContext {
+  audioCtx ??= new AudioContext();
+  if (audioCtx.state === "suspended") void audioCtx.resume();
+  return audioCtx;
+}
+
+function effectiveGain(peerId: number, channel: AudioChannel): number {
+  const key = audioKey(peerId, channel);
+  return mutedAudio.has(key) ? 0 : (volumes.get(key) ?? 1);
+}
+
+function peerGain(peerId: number, channel: AudioChannel): GainNode {
+  const key = audioKey(peerId, channel);
+  let gain = peerGains.get(key);
+  if (!gain) {
+    const ctx = ensureAudioCtx();
+    gain = ctx.createGain();
+    gain.gain.value = effectiveGain(peerId, channel);
+    gain.connect(ctx.destination);
+    peerGains.set(key, gain);
+  }
+  return gain;
+}
+
+function attachRemoteAudio(peerId: number, track: MediaStreamTrack, channel: AudioChannel): void {
+  const stream = new MediaStream([track]);
+
+  // O Chromium só faz o áudio WebRTC fluir se a stream estiver num elemento de mídia;
+  // ele fica mudo e o som real sai pelo GainNode.
+  const audio = document.createElement("audio");
+  audio.autoplay = true;
+  audio.muted = true;
+  audio.dataset.peer = String(peerId);
+  audio.dataset.kind = channel;
+  audio.srcObject = stream;
+  audioContainer.append(audio);
+
+  ensureAudioCtx().createMediaStreamSource(stream).connect(peerGain(peerId, channel));
+}
+
+function applyGain(peerId: number, channel: AudioChannel): void {
+  const gain = peerGains.get(audioKey(peerId, channel));
+  if (gain) gain.gain.value = effectiveGain(peerId, channel);
+}
+
+const volumeStorageKey = (name: string, channel: AudioChannel): string => `pecscord-volume:${channel}:${name}`;
+
+function loadVolumes(peerId: number, name: string): void {
+  for (const channel of CHANNELS) {
+    try {
+      const raw = localStorage.getItem(volumeStorageKey(name, channel));
+      const v = raw === null ? NaN : Number(raw);
+      if (Number.isFinite(v)) volumes.set(audioKey(peerId, channel), Math.min(VOLUME_MAX, Math.max(0, v)));
+    } catch {
+      // sem armazenamento: começa em 100%
+    }
+  }
+}
+
+function setVolume(peerId: number, channel: AudioChannel, value: number): void {
+  const v = Math.min(VOLUME_MAX, Math.max(0, value));
+  volumes.set(audioKey(peerId, channel), v);
+  const name = names.get(peerId);
+  if (name) {
+    try {
+      localStorage.setItem(volumeStorageKey(name, channel), String(v));
+    } catch {
+      // sem armazenamento: o ajuste vale só nesta sessão
+    }
+  }
+  applyGain(peerId, channel);
+  syncVolumePanel();
+  renderParticipants();
+}
+
+function toggleMuteAudio(peerId: number, channel: AudioChannel): void {
+  const key = audioKey(peerId, channel);
+  if (mutedAudio.has(key)) mutedAudio.delete(key);
+  else mutedAudio.add(key);
+  applyGain(peerId, channel);
+  syncVolumePanel();
+  renderParticipants();
+}
+
+function syncVolumePanel(): void {
+  if (panelPeer === null) return;
+  volumeName.textContent = names.get(panelPeer) ?? "";
+  for (const channel of CHANNELS) {
+    const c = channelControls[channel];
+    const pct = Math.round((volumes.get(audioKey(panelPeer, channel)) ?? 1) * 100);
+    const muted = mutedAudio.has(audioKey(panelPeer, channel));
+    c.range.value = String(pct);
+    c.value.textContent = `${pct}%`;
+    c.mute.textContent = muted ? "Desmutar" : "Mutar";
+    c.mute.classList.toggle("active", muted);
+  }
+}
+
+function openVolumePanel(peerId: number): void {
+  panelPeer = peerId;
+  syncVolumePanel();
+  volumePanel.hidden = false;
+  renderParticipants();
+}
+
+function closeVolumePanel(): void {
+  panelPeer = null;
+  volumePanel.hidden = true;
+  renderParticipants();
+}
+
+function dropPeerAudio(peerId: number): void {
+  for (const channel of CHANNELS) {
+    const key = audioKey(peerId, channel);
+    peerGains.get(key)?.disconnect();
+    peerGains.delete(key);
+    volumes.delete(key);
+    mutedAudio.delete(key);
+  }
+  if (panelPeer === peerId) closeVolumePanel();
+}
+
+function participantLabel(peerId: number, name: string): string {
+  if (peerId === myId) return `${name} (você)`;
+  const parts: string[] = [];
+  if (mutedAudio.has(audioKey(peerId, "mic"))) parts.push("mudo");
+  else {
+    const pct = Math.round((volumes.get(audioKey(peerId, "mic")) ?? 1) * 100);
+    if (pct !== 100) parts.push(`${pct}%`);
+  }
+  if (mutedAudio.has(audioKey(peerId, "screen"))) parts.push("tela muda");
+  return parts.length ? `${name} · ${parts.join(" · ")}` : name;
+}
+
 function renderParticipants(): void {
   participants.replaceChildren();
-  const all: [number, string][] = [[myId, `${myName} (você)`], ...names.entries()];
-  for (const [, name] of all) {
+  const all: [number, string][] = [[myId, myName], ...names.entries()];
+  for (const [peerId, name] of all) {
     const li = document.createElement("li");
-    li.textContent = name;
+    li.textContent = participantLabel(peerId, name);
+    if (peerId !== myId) {
+      li.dataset.peer = String(peerId);
+      li.title = "Clique para ajustar o volume";
+      li.classList.toggle("selected", panelPeer === peerId);
+      li.classList.toggle("quiet", effectiveGain(peerId, "mic") === 0);
+      li.addEventListener("click", () => (panelPeer === peerId ? closeVolumePanel() : openVolumePanel(peerId)));
+    }
     participants.append(li);
   }
 }
+
+for (const channel of CHANNELS) {
+  const c = channelControls[channel];
+  c.range.addEventListener("input", () => {
+    if (panelPeer !== null) setVolume(panelPeer, channel, Number(c.range.value) / 100);
+  });
+  c.mute.addEventListener("click", () => {
+    if (panelPeer !== null) toggleMuteAudio(panelPeer, channel);
+  });
+}
+volumeClose.addEventListener("click", closeVolumePanel);
 
 // Tile maximizado: ocupa toda a área de mídia até ser restaurado, esconder ou sair.
 let focusedTile: HTMLElement | null = null;
@@ -176,6 +353,21 @@ function createTile(owner: string, kind: Kind, title: string): { tile: HTMLEleme
   });
 
   tile.append(video, caption, max);
+
+  // Atalho no tile da tela de outra pessoa para o painel de volume dela.
+  if (kind === "screen" && owner !== "local") {
+    const vol = document.createElement("button");
+    vol.type = "button";
+    vol.className = "vol";
+    vol.textContent = "🔊";
+    vol.title = "Volume desta tela";
+    vol.addEventListener("click", (event) => {
+      event.stopPropagation();
+      openVolumePanel(Number(owner));
+    });
+    tile.append(vol);
+  }
+
   tile.addEventListener("dblclick", () => void video.requestFullscreen?.());
   (kind === "screen" ? stage : strip).append(tile);
   refreshLayout();
@@ -264,12 +456,7 @@ function createPeer(peerId: number, initiator: boolean): Peer {
     const kind = kindByStreamId.get(event.streams[0]?.id ?? "");
 
     if (event.track.kind === "audio") {
-      const audio = document.createElement("audio");
-      audio.autoplay = true;
-      audio.dataset.peer = String(peerId);
-      audio.dataset.kind = kind === "screen" ? "screen-audio" : "mic";
-      audio.srcObject = new MediaStream([event.track]);
-      audioContainer.append(audio);
+      attachRemoteAudio(peerId, event.track, kind === "screen" ? "screen" : "mic");
       return;
     }
 
@@ -290,6 +477,7 @@ function removePeer(peerId: number): void {
   peers.delete(peerId);
   pendingCandidates.delete(peerId);
   for (const kind of KINDS) remoteMediaOn.delete(mediaKey(peerId, kind));
+  dropPeerAudio(peerId);
   document.querySelectorAll<HTMLElement>(`[data-peer="${peerId}"]`).forEach((el) => el.remove());
   refreshLayout();
 }
@@ -523,6 +711,7 @@ function handleMessage(msg: ServerMsg): void {
       myId = msg.id;
       for (const p of msg.peers) {
         names.set(p.id, p.name);
+        loadVolumes(p.id, p.name);
         createPeer(p.id, true);
       }
       renderParticipants();
@@ -530,6 +719,7 @@ function handleMessage(msg: ServerMsg): void {
       break;
     case "peer_joined":
       names.set(msg.peer.id, msg.peer.name);
+      loadVolumes(msg.peer.id, msg.peer.name);
       createPeer(msg.peer.id, false);
       renderParticipants();
       addLine(`${msg.peer.name} entrou na sala.`, "system");
@@ -568,6 +758,7 @@ function cleanup(): void {
   audioContainer.replaceChildren();
   messages.replaceChildren();
   participants.replaceChildren();
+  closeVolumePanel();
   refreshLayout();
   muteButton.textContent = "Mutar";
   muteButton.classList.remove("active");
@@ -584,6 +775,8 @@ joinForm.addEventListener("submit", async (event) => {
   const name = nameInput.value.trim();
   if (!room || !name) return;
   myName = name;
+
+  ensureAudioCtx(); // criado aqui, dentro do clique, para o navegador permitir reproduzir áudio
 
   try {
     localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
@@ -651,9 +844,13 @@ export {};
 // Exposto para os testes automatizados lerem o estado real da captura de tela.
 declare global {
   interface Window {
-    __pecscordDebug?: { screenSettings: () => MediaTrackSettings | null };
+    __pecscordDebug?: {
+      screenSettings: () => MediaTrackSettings | null;
+      gainOf: (peerId: number, channel: AudioChannel) => number;
+    };
   }
 }
 window.__pecscordDebug = {
   screenSettings: () => localTracks.screen?.getSettings() ?? null,
+  gainOf: (peerId, channel) => effectiveGain(peerId, channel),
 };
