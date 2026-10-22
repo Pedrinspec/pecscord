@@ -69,6 +69,7 @@ const $ = <T extends HTMLElement>(id: string): T => document.getElementById(id) 
 const joinView = $<HTMLElement>("join");
 const roomView = $<HTMLElement>("room-view");
 const joinForm = $<HTMLFormElement>("join-form");
+const joinError = $<HTMLParagraphElement>("join-error");
 const roomInput = $<HTMLInputElement>("room");
 const nameInput = $<HTMLInputElement>("name");
 const roomName = $<HTMLElement>("room-name");
@@ -788,7 +789,12 @@ function handleMessage(msg: ServerMsg): void {
         createPeer(p.id, true);
       }
       renderParticipants();
-      addLine(`Você entrou na sala com ${msg.peers.length} outra(s) pessoa(s).`, "system");
+      if (reconnectAttempt > 0) {
+        reconnectAttempt = 0;
+        addLine("Reconectado.", "system");
+      } else {
+        addLine(`Você entrou na sala com ${msg.peers.length} outra(s) pessoa(s).`, "system");
+      }
       break;
     case "peer_joined":
       names.set(msg.peer.id, msg.peer.name);
@@ -816,6 +822,11 @@ function handleMessage(msg: ServerMsg): void {
 }
 
 function cleanup(): void {
+  if (reconnectTimer !== null) clearTimeout(reconnectTimer);
+  reconnectTimer = null;
+  reconnectAttempt = 0;
+  leaving = false;
+  currentRoom = "";
   for (const id of [...peers.keys()]) removePeer(id);
   for (const key of Object.keys(localTracks) as SenderKey[]) {
     localTracks[key]?.stop();
@@ -840,14 +851,83 @@ function cleanup(): void {
   joinView.hidden = false;
 }
 
+// ---- conexão com o servidor e reconexão -------------------------------------
+// O WebSocket só carrega sinalização e chat; a mídia vai direto entre as pessoas.
+// Se ele cair (túnel reiniciou, proxy derrubou a conexão ociosa, rede oscilou),
+// a sala continua na tela e o cliente entra de novo sozinho, com microfone,
+// câmera e tela ainda ligados. As conexões P2P são refeitas na volta.
+
+let leaving = false; // true quando a pessoa clicou em Sair: a queda é esperada
+let currentRoom = "";
+let reconnectAttempt = 0;
+let reconnectTimer: number | null = null;
+
+function connect(): void {
+  const scheme = location.protocol === "https:" ? "wss" : "ws";
+  const socket = new WebSocket(`${scheme}://${location.host}/ws`);
+  ws = socket;
+  const reconnecting = reconnectAttempt > 0;
+
+  socket.addEventListener("open", () => {
+    send({ type: "join", room: currentRoom, name: myName });
+    roomName.textContent = currentRoom;
+    joinView.hidden = true;
+    roomView.hidden = false;
+    muteButton.disabled = localStream === null;
+    if (!reconnecting) {
+      if (!localStream) addLine("Microfone indisponível: você vai ouvir, mas não falar.", "error");
+      textInput.focus();
+    }
+  });
+
+  socket.addEventListener("message", (event) => {
+    handleMessage(JSON.parse(event.data as string) as ServerMsg);
+  });
+
+  socket.addEventListener("close", () => {
+    if (ws !== socket) return; // já substituído por outra tentativa
+    ws = null;
+    if (leaving || roomView.hidden) {
+      // Saída pedida, ou nem chegou a entrar (servidor fora do ar no primeiro acesso).
+      const neverJoined = roomView.hidden;
+      cleanup();
+      if (neverJoined) {
+        joinError.textContent = "Não foi possível conectar ao servidor. Tente de novo.";
+        joinError.hidden = false;
+      }
+      return;
+    }
+    scheduleReconnect();
+  });
+}
+
+function scheduleReconnect(): void {
+  // Sem sinalização as conexões P2P ficam órfãs; derruba e refaz quando voltar.
+  for (const id of [...peers.keys()]) removePeer(id);
+  names.clear();
+  myId = -1;
+  renderParticipants();
+  closeVolumePanel();
+
+  const delay = Math.min(10_000, 1000 * 2 ** reconnectAttempt);
+  reconnectAttempt++;
+  addLine(`Conexão com o servidor caiu. Tentando de novo em ${Math.round(delay / 1000)} s…`, "error");
+  reconnectTimer = window.setTimeout(() => {
+    reconnectTimer = null;
+    connect();
+  }, delay);
+}
+
 joinForm.addEventListener("submit", async (event) => {
   event.preventDefault();
-  if (ws) return;
+  if (ws || currentRoom) return;
 
   const room = roomInput.value.trim();
   const name = nameInput.value.trim();
   if (!room || !name) return;
   myName = name;
+  currentRoom = room;
+  joinError.hidden = true;
 
   ensureAudioCtx(); // criado aqui, dentro do clique, para o navegador permitir reproduzir áudio
 
@@ -857,27 +937,7 @@ joinForm.addEventListener("submit", async (event) => {
     localStream = null;
   }
 
-  const scheme = location.protocol === "https:" ? "wss" : "ws";
-  const socket = new WebSocket(`${scheme}://${location.host}/ws`);
-  ws = socket;
-
-  socket.addEventListener("open", () => {
-    send({ type: "join", room, name });
-    roomName.textContent = room;
-    joinView.hidden = true;
-    roomView.hidden = false;
-    muteButton.disabled = localStream === null;
-    if (!localStream) addLine("Microfone indisponível: você vai ouvir, mas não falar.", "error");
-    textInput.focus();
-  });
-
-  socket.addEventListener("message", (event) => {
-    handleMessage(JSON.parse(event.data as string) as ServerMsg);
-  });
-
-  socket.addEventListener("close", () => {
-    cleanup();
-  });
+  connect();
 });
 
 muteButton.addEventListener("click", () => {
@@ -922,7 +982,11 @@ try {
 cameraButton.addEventListener("click", () => void toggleLocal("camera"));
 screenButton.addEventListener("click", () => void toggleLocal("screen"));
 screenQuality.addEventListener("change", () => void applyScreenPreset());
-leaveButton.addEventListener("click", () => ws?.close());
+leaveButton.addEventListener("click", () => {
+  leaving = true;
+  if (ws) ws.close();
+  else cleanup(); // estava esperando para reconectar
+});
 layoutSelect.addEventListener("change", () => applyLayout(layoutSelect.value));
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && focusedTile) setFocus(null);

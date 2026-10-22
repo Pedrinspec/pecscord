@@ -69,7 +69,8 @@ console.log("> build do servidor");
 run(cargoPath(), ["build", "--quiet", "--target-dir", TARGET_DIR], path.join(ROOT, "server"));
 
 const serverExe = path.join(TARGET_DIR, "debug", process.platform === "win32" ? "pecscord-server.exe" : "pecscord-server");
-const server = spawn(serverExe, [], { stdio: "ignore", env: { ...process.env, PORT: String(PORT) } });
+const startServer = () => spawn(serverExe, [], { stdio: "ignore", env: { ...process.env, PORT: String(PORT) } });
+let server = startServer();
 await waitForPort(PORT, 15000);
 
 const browserPath = BROWSERS.find((p) => existsSync(p));
@@ -255,6 +256,23 @@ try {
   check(seen.length === 2 && seen.every((t) => !t.hidden && t.width > 0), "Ana vê as câmeras de Bruno e Carla");
   seen = await remoteTiles(b, "camera");
   check(seen.length === 2 && seen.every((t) => !t.hidden && t.width > 0), "Bruno vê as câmeras de Ana e Carla");
+
+  console.log("\n# servidor cai e volta: todos reconectam sozinhos");
+  server.kill();
+  await sleep(1500);
+  check(await a.$eval("#room-view", (e) => !e.hidden), "Ana continua na sala enquanto espera");
+  check((await lastMessage(a)).includes("caiu"), "Ana vê o aviso de queda");
+  check((await a.evaluate(() => window.__pecscordDebug.micEnabled())) === true, "microfone de Ana segue ligado durante a espera");
+  server = startServer();
+  await waitForPort(PORT, 15000);
+  await sleep(12000); // tentativas em 1 s, 2 s e 4 s, mais a renegociação
+  const afterReconnect = await a.$$eval("#participants li", (els) => els.map((e) => e.textContent));
+  check(afterReconnect.some((p) => p.includes("Bruno")) && afterReconnect.some((p) => p.includes("Carla")), `Ana vê Bruno e Carla de novo (${afterReconnect.join(", ")})`);
+  check((await a.evaluate(() => [...document.querySelectorAll("#messages li")].some((e) => e.textContent === "Reconectado."))), "Ana recebe 'Reconectado.'");
+  seen = await remoteTiles(a, "camera");
+  check(seen.length === 2 && seen.every((t) => !t.hidden && t.width > 0), "câmeras de Bruno e Carla voltam para Ana");
+  seen = await remoteTiles(b, "camera");
+  check(seen.length === 2 && seen.every((t) => !t.hidden && t.width > 0), "câmeras de Ana e Carla voltam para Bruno");
 
   console.log("\n# saída");
   await a.click("#leave");

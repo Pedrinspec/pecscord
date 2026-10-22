@@ -66,6 +66,7 @@
       }
       .card h1 { margin: 0 0 4px; font-size: 28px; }
       .card p { margin: 0 0 20px; color: var(--muted); }
+      .card p.error { margin: 12px 0 0; color: var(--danger); font-size: 13px; }
       .card form { display: grid; gap: 10px; }
       .card label { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
       .card label input { width: 100%; }
@@ -433,6 +434,7 @@
           <label>Seu nome <input id="name" placeholder="Como quer ser chamado" required autocomplete="nickname" /></label>
           <button type="submit" class="primary">Entrar</button>
         </form>
+        <p id="join-error" class="error" hidden></p>
         <div class="theme-pick">
           <label for="theme-join">Tema</label>
           <select id="theme-join" data-theme-select>

@@ -29,6 +29,15 @@ em `client` (porta 5173) com o servidor ativo; o Vite encaminha `/ws` para ele.
 
 A porta do servidor pode ser trocada pela variável `PORT`.
 
+## Quedas de conexão
+
+O WebSocket com o servidor só carrega sinalização e chat. O servidor manda um
+ping a cada 30 s para que proxies e túneis (ex.: Cloudflare, que fecha conexões
+sem tráfego por ~100 s) não derrubem a conexão de uma sala quieta. Se mesmo
+assim ela cair, o cliente avisa no chat e entra de novo sozinho (1 s, 2 s, 4 s…
+até 10 s entre tentativas), mantendo microfone, câmera e tela ligados; as
+conexões de mídia com as outras pessoas são refeitas na volta.
+
 ## Tema
 
 O seletor "Tema", no cartão de entrada e no cabeçalho da sala, alterna entre o

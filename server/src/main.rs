@@ -15,6 +15,7 @@ use std::{
         atomic::{AtomicU64, Ordering},
         Arc,
     },
+    time::Duration,
 };
 use tokio::sync::{mpsc, RwLock};
 use tower_http::services::ServeDir;
@@ -23,6 +24,7 @@ type PeerId = u64;
 
 const MAX_NAME_CHARS: usize = 32;
 const MAX_TEXT_CHARS: usize = 2000;
+const PING_SECS: u64 = 30;
 
 #[derive(Clone)]
 struct AppState {
@@ -97,10 +99,25 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
     let (tx, mut rx) = mpsc::unbounded_channel::<String>();
 
     // Tarefa dedicada que envia para o socket tudo que for enfileirado em `tx`.
+    // Também manda um ping a cada PING_SECS: proxies como o túnel da Cloudflare
+    // derrubam WebSockets sem tráfego por ~100 s, e uma sala quieta não gera nada.
+    // O navegador responde com pong sozinho, o que mantém a conexão viva nos dois sentidos.
     let writer = tokio::spawn(async move {
-        while let Some(text) = rx.recv().await {
-            if sender.send(Message::Text(text.into())).await.is_err() {
-                break;
+        let mut ping = tokio::time::interval(Duration::from_secs(PING_SECS));
+        ping.tick().await; // o primeiro tick dispara na hora; pula
+        loop {
+            tokio::select! {
+                text = rx.recv() => {
+                    let Some(text) = text else { break };
+                    if sender.send(Message::Text(text.into())).await.is_err() {
+                        break;
+                    }
+                }
+                _ = ping.tick() => {
+                    if sender.send(Message::Ping(Vec::new().into())).await.is_err() {
+                        break;
+                    }
+                }
             }
         }
     });
