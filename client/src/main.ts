@@ -909,6 +909,33 @@ muteOnShareCheckbox.addEventListener("change", () => {
 });
 loadAudioOptions();
 
+// ---- tema -------------------------------------------------------------------
+// Só estética: o tema vai em data-theme no <html> e o CSS troca as variáveis.
+// O <script> inline no index.html aplica o salvo antes da primeira pintura.
+
+const THEMES = ["default", "vaporwave"] as const;
+type Theme = (typeof THEMES)[number];
+const themeSelects = [...document.querySelectorAll<HTMLSelectElement>("[data-theme-select]")];
+
+function applyTheme(theme: string): void {
+  const chosen: Theme = (THEMES as readonly string[]).includes(theme) ? (theme as Theme) : "default";
+  if (chosen === "default") delete document.documentElement.dataset.theme;
+  else document.documentElement.dataset.theme = chosen;
+  for (const sel of themeSelects) sel.value = chosen;
+  try {
+    localStorage.setItem("pecscord-theme", chosen);
+  } catch {
+    // ignorado
+  }
+}
+
+for (const sel of themeSelects) sel.addEventListener("change", () => applyTheme(sel.value));
+try {
+  applyTheme(localStorage.getItem("pecscord-theme") ?? "default");
+} catch {
+  applyTheme("default");
+}
+
 cameraButton.addEventListener("click", () => void toggleLocal("camera"));
 screenButton.addEventListener("click", () => void toggleLocal("screen"));
 screenQuality.addEventListener("change", () => void applyScreenPreset());

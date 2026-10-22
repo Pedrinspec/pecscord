@@ -16,6 +16,8 @@
         --accent: #5b8def;
         --accent-hover: #4a7be0;
         --danger: #e5484d;
+        --surface-hover: #263041;
+        --tile-border: var(--border);
         --radius: 10px;
       }
 
@@ -40,7 +42,7 @@
       }
       input:focus, select:focus, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
       button { cursor: pointer; }
-      button:hover { background: #263041; }
+      button:hover { background: var(--surface-hover); }
       button:disabled { opacity: 0.5; cursor: not-allowed; }
       button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
       button.primary:hover { background: var(--accent-hover); }
@@ -85,7 +87,7 @@
       header .brand { font-weight: 700; }
       header .sep { color: var(--muted); }
       header #room-name { color: var(--muted); }
-      header #leave { margin-left: auto; }
+      header .theme-pick { margin-left: auto; }
 
       .layout {
         display: grid;
@@ -143,7 +145,7 @@
         background: #000;
         border-radius: var(--radius);
         overflow: hidden;
-        border: 1px solid var(--border);
+        border: 1px solid var(--tile-border);
       }
       .tile[data-peer="local"] { border-color: var(--accent); }
       .tile span {
@@ -258,7 +260,7 @@
         font-size: 13px;
       }
       #participants li[data-peer] { cursor: pointer; }
-      #participants li[data-peer]:hover { background: #263041; }
+      #participants li[data-peer]:hover { background: var(--surface-hover); }
       #participants li.selected { outline: 2px solid var(--accent); }
       #participants li.quiet { color: var(--muted); }
 
@@ -318,7 +320,108 @@
         .layout { grid-template-columns: 1fr; grid-template-rows: 1fr minmax(220px, 40vh); }
         #side { border-left: 0; border-top: 1px solid var(--border); }
       }
+
+      /* seletor de tema: discreto no canto do cartão de entrada e no cabeçalho da sala */
+      .theme-pick { display: flex; gap: 6px; align-items: center; font-size: 13px; color: var(--muted); }
+      .theme-pick select { padding: 4px 8px; font-size: 13px; }
+      .card .theme-pick { justify-content: flex-end; margin-top: 16px; }
+
+      /* ---- tema vaporwave: pôr do sol neon, grade no horizonte e brilho rosa/ciano ---- */
+      :root[data-theme="vaporwave"] {
+        --bg: #170a2b;
+        --surface: rgba(30, 12, 58, 0.82);
+        --surface-2: #35175f;
+        --surface-hover: #472380;
+        --border: rgba(255, 113, 206, 0.45);
+        --tile-border: rgba(1, 205, 254, 0.55);
+        --text: #fdf2ff;
+        --muted: #b9a0dc;
+        --accent: #ff71ce;
+        --accent-hover: #ff4fc0;
+        --danger: #ff5e7e;
+        --radius: 6px;
+      }
+      :root[data-theme="vaporwave"] body {
+        background: linear-gradient(180deg, #2a0a58 0%, #170a2b 52%, #061a3a 100%) fixed;
+      }
+      /* sol listrado atrás de tudo */
+      :root[data-theme="vaporwave"] body::after {
+        content: "";
+        position: fixed;
+        left: 50%;
+        bottom: 36vh;
+        width: 340px;
+        height: 340px;
+        transform: translateX(-50%);
+        border-radius: 50%;
+        background:
+          repeating-linear-gradient(to bottom, transparent 0 16px, #170a2b 16px 24px) bottom / 100% 50% no-repeat,
+          linear-gradient(#ffd27a, #ff71ce 55%, #b967ff);
+        opacity: 0.95;
+        filter: drop-shadow(0 0 40px rgba(255, 113, 206, 0.45));
+        z-index: -2;
+        pointer-events: none;
+      }
+      /* grade em perspectiva no chão */
+      :root[data-theme="vaporwave"] body::before {
+        content: "";
+        position: fixed;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        height: 48vh;
+        background-image:
+          linear-gradient(rgba(1, 205, 254, 0.6) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(1, 205, 254, 0.6) 1px, transparent 1px);
+        background-size: 100% 36px, 56px 100%;
+        transform: perspective(320px) rotateX(58deg);
+        transform-origin: bottom;
+        -webkit-mask-image: linear-gradient(to top, #000 20%, transparent);
+        mask-image: linear-gradient(to top, #000 20%, transparent);
+        z-index: -1;
+        pointer-events: none;
+      }
+      :root[data-theme="vaporwave"] .card { background: rgba(30, 12, 58, 0.62); }
+      :root[data-theme="vaporwave"] .card,
+      :root[data-theme="vaporwave"] #controls,
+      :root[data-theme="vaporwave"] header,
+      :root[data-theme="vaporwave"] #side {
+        backdrop-filter: blur(6px);
+        box-shadow: 0 0 0 1px rgba(1, 205, 254, 0.12), 0 0 24px rgba(255, 113, 206, 0.12);
+      }
+      :root[data-theme="vaporwave"] .card h1,
+      :root[data-theme="vaporwave"] header .brand {
+        font-style: italic;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: #fff;
+        text-shadow: -2px 0 #01cdfe, 2px 0 #ff71ce, 0 0 18px rgba(255, 113, 206, 0.7);
+      }
+      :root[data-theme="vaporwave"] button.primary,
+      :root[data-theme="vaporwave"] button.active {
+        background: linear-gradient(135deg, #ff71ce, #b967ff);
+        border-color: transparent;
+        box-shadow: 0 0 12px rgba(255, 113, 206, 0.6);
+      }
+      :root[data-theme="vaporwave"] button.primary:hover,
+      :root[data-theme="vaporwave"] button.active:hover { background: linear-gradient(135deg, #ff4fc0, #a94dff); }
+      :root[data-theme="vaporwave"] button.danger { background: linear-gradient(135deg, #ff5e7e, #ff8a5c); border-color: transparent; }
+      :root[data-theme="vaporwave"] .tile { box-shadow: 0 0 14px rgba(1, 205, 254, 0.25); }
+      :root[data-theme="vaporwave"] .tile[data-peer="local"] { box-shadow: 0 0 14px rgba(255, 113, 206, 0.45); }
+      :root[data-theme="vaporwave"] #participants li.selected { outline-color: #01cdfe; }
+      :root[data-theme="vaporwave"] #side h2 { color: #01cdfe; text-shadow: 0 0 8px rgba(1, 205, 254, 0.6); }
+      :root[data-theme="vaporwave"] input:focus,
+      :root[data-theme="vaporwave"] select:focus,
+      :root[data-theme="vaporwave"] button:focus-visible { outline-color: #01cdfe; }
+      :root[data-theme="vaporwave"] #empty-hint { text-shadow: 0 0 10px rgba(185, 103, 255, 0.6); }
     </style>
+    <script>
+      // Aplica o tema salvo antes da primeira pintura, para não piscar o tema padrão.
+      try {
+        var t = localStorage.getItem("pecscord-theme");
+        if (t === "vaporwave") document.documentElement.dataset.theme = t;
+      } catch (e) {}
+    </script>
   </head>
   <body>
     <div id="join">
@@ -330,6 +433,13 @@
           <label>Seu nome <input id="name" placeholder="Como quer ser chamado" required autocomplete="nickname" /></label>
           <button type="submit" class="primary">Entrar</button>
         </form>
+        <div class="theme-pick">
+          <label for="theme-join">Tema</label>
+          <select id="theme-join" data-theme-select>
+            <option value="default">Padrão</option>
+            <option value="vaporwave">Vaporwave</option>
+          </select>
+        </div>
       </div>
     </div>
 
@@ -338,6 +448,13 @@
         <span class="brand">Pecscord</span>
         <span class="sep">/</span>
         <span id="room-name"></span>
+        <div class="theme-pick">
+          <label for="theme-room">Tema</label>
+          <select id="theme-room" data-theme-select>
+            <option value="default">Padrão</option>
+            <option value="vaporwave">Vaporwave</option>
+          </select>
+        </div>
         <button type="button" id="leave" class="danger">Sair</button>
       </header>
 

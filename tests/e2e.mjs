@@ -171,6 +171,18 @@ try {
   seen = await remoteTiles(b, "camera");
   check(seen.length === 1 && !seen[0].hidden && seen[0].width > 0, "tile de Ana volta para Bruno");
 
+  console.log("\n# tema");
+  const accentOf = (page) => page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--accent").trim());
+  const defaultAccent = await accentOf(a);
+  await a.selectOption("#theme-room", "vaporwave");
+  check((await a.evaluate(() => document.documentElement.dataset.theme)) === "vaporwave", "tema vaporwave aplicado no <html>");
+  check((await accentOf(a)) !== defaultAccent, "cor de destaque muda com o tema");
+  check((await a.evaluate(() => localStorage.getItem("pecscord-theme"))) === "vaporwave", "tema é lembrado");
+  check((await a.$eval("#theme-join", (e) => e.value)) === "vaporwave", "seletor da tela de entrada acompanha");
+  await a.selectOption("#theme-room", "default");
+  check((await a.evaluate(() => document.documentElement.dataset.theme)) === undefined, "voltar ao padrão limpa o data-theme");
+  check((await accentOf(a)) === defaultAccent, "cor de destaque volta ao padrão");
+
   console.log("\n# microfone: supressão de ruído");
   check(await a.$eval("#noise-suppression", (e) => e.checked), "supressão de ruído vem ligada por padrão");
   check((await a.evaluate(() => window.__pecscordDebug.micSettings()?.noiseSuppression)) === true, "faixa do microfone nasce com supressão");

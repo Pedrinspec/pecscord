@@ -29,6 +29,12 @@ em `client` (porta 5173) com o servidor ativo; o Vite encaminha `/ws` para ele.
 
 A porta do servidor pode ser trocada pela variável `PORT`.
 
+## Tema
+
+O seletor "Tema", no cartão de entrada e no cabeçalho da sala, alterna entre o
+visual padrão (escuro, azul) e o **Vaporwave** (pôr do sol neon, grade no
+horizonte, rosa e ciano). É só estética; a escolha fica salva no navegador.
+
 ## Opções de áudio
 
 Na barra de controles, duas caixas são lembradas entre sessões:
